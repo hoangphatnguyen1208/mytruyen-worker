@@ -41,7 +41,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd mytruyen-be
+            cd mytruyen-worker
             docker pull hoangphat120805/mytruyen-worker:latest
             docker compose up -d mytruyen-worker
             docker image prune -f

@@ -43,8 +43,8 @@ jobs:
             docker pull hoangphat120805/mytruyen-worker:latest
             docker compose up -d mytruyen-worker
             docker image prune -f
-      - name: Notify Telegram
-        run: |
-          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="Build success for ${{ github.repository }}"
+      # - name: Notify Telegram
+      #   run: |
+      #     curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+      #     -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+      #     -d text="Build success for ${{ github.repository }}"

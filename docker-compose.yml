@@ -1,0 +1,7 @@
+services:
+	mytruyen-worker:
+    container_name: mytruyen-worker
+		image: hoangphat120805/mytruyen-worker:latest
+		restart: unless-stopped
+		env_file:
+			- .env

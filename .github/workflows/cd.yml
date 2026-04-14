@@ -1,0 +1,50 @@
+name: Build and Deploy Worker
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: hoangphat120805/mytruyen-worker:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH (pull image)
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd mytruyen-be
+            docker pull hoangphat120805/mytruyen-worker:latest
+            docker compose up -d mytruyen-worker
+            docker image prune -f
+      - name: Notify Telegram
+        run: |
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          -d text="Build success for ${{ github.repository }}"

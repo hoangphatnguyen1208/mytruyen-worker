@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/meilisearch/meilisearch-go"
@@ -60,7 +61,9 @@ func main() {
 	// =========================================================================
 	// 2. KHỞI TẠO RABBITMQ CONNECTION & CHANNEL
 	// =========================================================================
-	conn, err := amqp.Dial(os.Getenv("RABBITMQ_URL"))
+	conn, err := amqp.DialConfig(os.Getenv("RABBITMQ_URL"), amqp.Config{
+        Heartbeat: 10 * time.Second,
+    })
 	failOnError(err, "Không thể kết nối tới RabbitMQ")
 	defer conn.Close()
 

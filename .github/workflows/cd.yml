@@ -30,6 +30,7 @@ jobs:
           tags: hoangphat120805/mytruyen-worker:latest
 
   deploy:
+    depends-on: build
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH (pull image)

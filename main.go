@@ -97,6 +97,46 @@ func main() {
 	)
 	failOnError(err, "Lỗi khi đăng ký Consumer")
 
+	connCloseErrs := conn.NotifyClose(make(chan *amqp.Error, 1))
+	chCloseErrs := ch.NotifyClose(make(chan *amqp.Error, 1))
+	consumerCancels := ch.NotifyCancel(make(chan string, 1))
+
+	go func() {
+		for {
+			select {
+			case amqpErr, ok := <-connCloseErrs:
+				if !ok {
+					log.Println("[RabbitMQ] NotifyClose(connection) channel đã đóng")
+					return
+				}
+				if amqpErr != nil {
+					log.Printf("[RabbitMQ] Connection bị đóng: code=%d reason=%s server=%t recover=%t", amqpErr.Code, amqpErr.Reason, amqpErr.Server, amqpErr.Recover)
+					return
+				}
+				log.Println("[RabbitMQ] Connection đóng bình thường")
+				return
+			case amqpErr, ok := <-chCloseErrs:
+				if !ok {
+					log.Println("[RabbitMQ] NotifyClose(channel) channel đã đóng")
+					return
+				}
+				if amqpErr != nil {
+					log.Printf("[RabbitMQ] Channel bị đóng: code=%d reason=%s server=%t recover=%t", amqpErr.Code, amqpErr.Reason, amqpErr.Server, amqpErr.Recover)
+					return
+				}
+				log.Println("[RabbitMQ] Channel đóng bình thường")
+				return
+			case tag, ok := <-consumerCancels:
+				if !ok {
+					log.Println("[RabbitMQ] NotifyCancel channel đã đóng")
+					return
+				}
+				log.Printf("[RabbitMQ] Consumer bị cancel bởi broker. consumerTag=%s", tag)
+				return
+			}
+		}
+	}()
+
 	// =========================================================================
 	// 4. CHẠY WORKER POOL
 	// =========================================================================
@@ -197,7 +237,9 @@ func main() {
 	log.Println("\n[!] Nhận lệnh tắt server. Bắt đầu tiến trình Graceful Shutdown...")
 
 	log.Println("Đóng kết nối RabbitMQ Channel...")
-	ch.Close()
+	if err := ch.Close(); err != nil {
+		log.Printf("Lỗi khi đóng channel: %v", err)
+	}
 
 	log.Println("Đang chờ các workers hoàn tất task hiện tại...")
 	wg.Wait()

@@ -203,7 +203,7 @@ func consumer(ctx context.Context) error {
 				var success bool
 				switch crawlRequest.Type {
 				case "crawl_genres":
-					success = task.GenresHandler(MeTruyencvClient, MyTruyenClient)
+					success = task.GenresHandler(MeTruyencvClient, MyTruyenClient, workerID)
 					if !success {
 						log.Printf("[Worker %d] Failed to crawl genres", workerID)
 					} else {
@@ -211,7 +211,7 @@ func consumer(ctx context.Context) error {
 					}
 
 				case "crawl_tags":
-					success = task.TagsHandler(MeTruyencvClient, MyTruyenClient)
+					success = task.TagsHandler(MeTruyencvClient, MyTruyenClient, workerID)
 					if !success {
 						log.Printf("[Worker %d] Failed to crawl tags", workerID)
 					} else {
@@ -219,7 +219,7 @@ func consumer(ctx context.Context) error {
 					}
 
 				case "crawl_book_statuses":
-					success = task.BookStatusHandler(MeTruyencvClient, MyTruyenClient)
+					success = task.BookStatusHandler(MeTruyencvClient, MyTruyenClient, workerID)
 					if !success {
 						log.Printf("[Worker %d] Failed to crawl book statuses", workerID)
 					} else {
@@ -227,7 +227,7 @@ func consumer(ctx context.Context) error {
 					}
 
 				case "crawl_all_books":
-					success = task.AllBookHandler(MeTruyencvClient, MyTruyenClient, q.Name)
+					success = task.AllBookHandler(MeTruyencvClient, MyTruyenClient, q.Name, workerID)
 					if !success {
 						log.Printf("[Worker %d] Failed to crawl all books", workerID)
 					} else {
@@ -235,7 +235,7 @@ func consumer(ctx context.Context) error {
 					}
 
 				case "crawl_book":
-					success = task.BookHandler(MeTruyencvClient, MyTruyenClient, crawlRequest.BookID)
+					success = task.BookHandler(MeTruyencvClient, MyTruyenClient, crawlRequest.BookID, workerID)
 					if !success {
 						log.Printf("[Worker %d] Failed to crawl book ID %d", workerID, crawlRequest.BookID)
 					} else {
@@ -243,7 +243,7 @@ func consumer(ctx context.Context) error {
 					}
 
 				case "crawl_chapters":
-					success = task.ChaptersHandler(MeTruyencvClient, MyTruyenClient, crawlRequest.BookID)
+					success = task.ChaptersHandler(MeTruyencvClient, MyTruyenClient, crawlRequest.BookID, workerID)
 					if !success {
 						log.Printf("[Worker %d] Failed to crawl chapters", workerID)
 					} else {

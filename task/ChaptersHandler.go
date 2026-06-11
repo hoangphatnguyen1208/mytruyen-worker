@@ -7,8 +7,8 @@ import (
 	resty "github.com/go-resty/resty/v2"
 )
 
-func ChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, bookID int) bool {
-	log.Printf("Crawling chapters for book '%d'", bookID)
+func ChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, bookID int, workerID int) bool {
+	log.Printf("[Worker %d] Crawling chapters for book '%d'", workerID, bookID)
 
 	var result struct {
 		Data []map[string]any `json:"data"`
@@ -20,18 +20,18 @@ func ChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Clien
 		Get("chapters/")
 
 	if err != nil {
-		log.Printf("Error fetching chapters from MeTruyen for book %d: %v", bookID, err)
+		log.Printf("[Worker %d] Error fetching chapters from MeTruyen for book %d: %v", workerID, bookID, err)
 		return false
 	}
 	if resp.IsError() {
-		log.Printf("Error response from MeTruyen when fetching chapters for book %d: %s", bookID, resp.Status())
+		log.Printf("[Worker %d] Error response from MeTruyen when fetching chapters for book %d: %s", workerID, bookID, resp.Status())
 		return false
 	}
 
 	chapters := result.Data
 	n := len(chapters)
 	if n == 0 {
-		log.Printf("No chapters found for book %d on MeTruyen", bookID)
+		log.Printf("[Worker %d] No chapters found for book %d on MeTruyen", workerID, bookID)
 		return true
 	}
 
@@ -57,7 +57,7 @@ func ChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Clien
 		}
 	}
 
-	log.Printf("Max existing chapter index for book '%d' is %d", bookID, start)
+	log.Printf("[Worker %d] Max existing chapter index for book '%d' is %d", workerID, bookID, start)
 
 	for i := start + 1; i < n; i++ {
 		chapter := chapters[i]
@@ -77,10 +77,10 @@ func ChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Clien
 			Post(fmt.Sprintf("chapters/id/%d", bookID))
 
 		if err != nil {
-			log.Printf("Error posting chapter %d for book %d: %v", indexVal, bookID, err)
+			log.Printf("[Worker %d] Error posting chapter %d for book %d: %v", workerID, indexVal, bookID, err)
 			return false
 		} else if resp.StatusCode() >= 500 {
-			log.Printf("Failed to post chapter %d for book %d, status: %s, body: %s", indexVal, bookID, resp.Status(), resp.String())
+			log.Printf("[Worker %d] Failed to post chapter %d for book %d, status: %s, body: %s", workerID, indexVal, bookID, resp.Status(), resp.String())
 			return false
 		}
 	}

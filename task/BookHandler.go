@@ -1,13 +1,15 @@
 package task
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	resty "github.com/go-resty/resty/v2"
 )
 
-func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, bookID int) bool {
+func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, bookID int, workerID int) bool {
 	var bookData struct {
 		Data map[string]any `json:"data"`
 	}
@@ -17,11 +19,11 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 		Get(fmt.Sprintf("books/%d", bookID))
 
 	if err != nil {
-		log.Printf("Error fetching book from MeTruyen: %v", err)
+		log.Printf("[Worker %d] Error fetching book from MeTruyen: %v", workerID, err)
 		return false
 	}
 	if resp.IsError() {
-		log.Printf("Error response from MeTruyen when fetching book %d: %s", bookID, resp.Status())
+		log.Printf("[Worker %d] Error response from MeTruyen when fetching book %d: %s", workerID, bookID, resp.Status())
 		return false
 	}
 
@@ -33,11 +35,11 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 		SetQueryParam("filter[book_id]", fmt.Sprintf("%d", bookID)).
 		Get("/chapters")
 	if err != nil {
-		log.Printf("Error checking chapters on MeTruyen for book %d: %v", bookID, err)
+		log.Printf("[Worker %d] Error checking chapters on MeTruyen for book %d: %v", workerID, bookID, err)
 		return false
 	}
 	if meTruyenResponse.StatusCode() == 404 {
-		log.Printf("Book '%s' not found on Metruyencv. Skipping.", bookSlug)
+		log.Printf("[Worker %d] Book '%s' not found on Metruyencv. Skipping.", workerID, bookSlug)
 		return false
 	}
 
@@ -54,7 +56,7 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 	}
 
 	if err == nil && bookResponse.StatusCode() == 200 {
-		log.Printf("Book '%s' already exists in MyTruyen. Updating...", bookName)
+		log.Printf("[Worker %d] Book '%s' already exists in MyTruyen. Updating...", workerID, bookName)
 		updatePayload := map[string]any{
 			"name":             getVal(bookData.Data, "name", ""),
 			"slug":             getVal(bookData.Data, "slug", ""),
@@ -78,7 +80,7 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 			SetBody(updatePayload).
 			Patch(fmt.Sprintf("books/id/%d", bookID))
 		if err != nil {
-			log.Printf("Failed to update book %d: %v", bookID, err)
+			log.Printf("[Worker %d] Failed to update book %d: %v", workerID, bookID, err)
 		}
 		return true
 	}
@@ -91,9 +93,9 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 		authorObj = c
 	}
 
-	author, err := GetOrCreateAuthor(myTruyenClient, authorObj)
+	author, err := GetOrCreateAuthor(myTruyenClient, authorObj, workerID)
 	if err != nil {
-		log.Printf("Failed to get/create author for book %d: %v", bookID, err)
+		log.Printf("[Worker %d] Failed to get/create author for book %d: %v", workerID, bookID, err)
 		return false
 	}
 	var authorID any
@@ -106,7 +108,7 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 	if genresList, ok := bookData.Data["genres"].([]any); ok {
 		for _, genreItem := range genresList {
 			if gMap, ok := genreItem.(map[string]any); ok {
-				gid, err := GetOrCreateGenre(myTruyenClient, gMap)
+				gid, err := GetOrCreateGenre(myTruyenClient, gMap, workerID)
 				if err == nil && gid != nil {
 					genreIDs = append(genreIDs, gid)
 				}
@@ -119,7 +121,7 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 	if tagsList, ok := bookData.Data["tags"].([]any); ok {
 		for _, tagItem := range tagsList {
 			if tMap, ok := tagItem.(map[string]any); ok {
-				tid, err := GetOrCreateTag(myTruyenClient, tMap)
+				tid, err := GetOrCreateTag(myTruyenClient, tMap, workerID)
 				if err == nil && tid != nil {
 					tagIDs = append(tagIDs, tid)
 				}
@@ -151,10 +153,19 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 		SetBody(payload).
 		Post("books")
 	if err != nil {
-		log.Printf("Failed to create book %d: %v", bookID, err)
+		log.Printf("[Worker %d] Failed to create book %d: %v", workerID, bookID, err)
 		return false
 	} else if mytruyen_resp.IsError() {
-		log.Printf("Failed to create book %d, status: %s, body: %s", bookID, mytruyen_resp.Status(), mytruyen_resp.String())
+		data := map[string]any{}
+		if err := json.Unmarshal(mytruyen_resp.Body(), &data); err == nil {
+			if msg := data["message"]; msg != nil {
+				if strings.Contains(msg.(string), "already exists") {
+					log.Printf("[Worker %d] Book %d already exists in MyTruyen. Skipping...", workerID, bookID)
+					return true
+				}
+			}
+		}
+		log.Printf("[Worker %d] Failed to create book %d, status: %s, body: %s", workerID, bookID, mytruyen_resp.Status(), mytruyen_resp.String())
 		return false
 	}
 
@@ -165,11 +176,12 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 		}).
 		Post("rabbitmq/chapters")
 	if err != nil {
-		log.Printf("Failed to enqueue chapters for book %d: %v", bookID, err)
+		log.Printf("[Worker %d] Failed to enqueue chapters for book %d: %v", workerID, bookID, err)
 			return false
 	} else if mytruyen_resp.IsError() {
-		log.Printf("Failed to enqueue chapters for book %d, status: %s, body: %s", bookID, mytruyen_resp.Status(), mytruyen_resp.String())
+		log.Printf("[Worker %d] Failed to enqueue chapters for book %d, status: %s, body: %s", workerID, bookID, mytruyen_resp.Status(), mytruyen_resp.String())
 		return false
 	}
+	log.Printf("[Worker %d] Book %d processed successfully", workerID, bookID)
 	return true
 }

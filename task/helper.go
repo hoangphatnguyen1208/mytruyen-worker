@@ -9,14 +9,14 @@ import (
 	"github.com/gosimple/slug"
 )
 
-func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (map[string]any, error) {
+func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any, workerID int) (map[string]any, error) {
 	if authorObj == nil {
-		log.Printf("Author object is nil.")
+		log.Printf("[Worker %d] Author object is nil.", workerID)
 		return nil, nil
 	}
 	name, _ := authorObj["name"].(string)
 	if name == "" {
-		log.Printf("Author name is empty.")
+		log.Printf("[Worker %d] Author name is empty.", workerID)
 		return nil, nil
 	}
 
@@ -46,10 +46,10 @@ func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (
 			Post("authors")
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to create author: %w", err)
+			return nil, fmt.Errorf("[Worker %d] failed to create author: %w", workerID, err)
 		}
 		if resp.IsError() {
-			return nil, fmt.Errorf("failed to create author, status: %s, body: %s", resp.Status(), resp.String())
+			return nil, fmt.Errorf("[Worker %d] failed to create author, status: %s, body: %s", workerID, resp.Status(), resp.String())
 		}
 		getResult.Data = postResult.Data
 	}
@@ -58,12 +58,14 @@ func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (
 	return author, nil
 }
 
-func GetOrCreateGenre(myTruyenClient *resty.Client, genreObj map[string]any) (any, error) {
+func GetOrCreateGenre(myTruyenClient *resty.Client, genreObj map[string]any, workerID int) (any, error) {
 	if genreObj == nil {
+		log.Printf("[Worker %d] Genre object is nil.", workerID)
 		return nil, nil
 	}
 	name, _ := genreObj["name"].(string)
 	if name == "" {
+		log.Printf("[Worker %d] Genre name is empty.", workerID)
 		return nil, nil
 	}
 	genreSlug := slug.Make(name)
@@ -89,10 +91,10 @@ func GetOrCreateGenre(myTruyenClient *resty.Client, genreObj map[string]any) (an
 			Post("genres")
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to create genre: %w", err)
+			return nil, fmt.Errorf("[Worker %d] failed to create genre: %w", workerID, err)
 		}
 		if resp.IsError() {
-			return nil, fmt.Errorf("failed to create genre, status: %s, body: %s", resp.Status(), resp.String())
+			return nil, fmt.Errorf("[Worker %d] failed to create genre, status: %s, body: %s", workerID, resp.Status(), resp.String())
 		}
 		getResult.Data = postResult.Data
 	}
@@ -105,12 +107,14 @@ func GetOrCreateGenre(myTruyenClient *resty.Client, genreObj map[string]any) (an
 	return nil, nil
 }
 
-func GetOrCreateTag(myTruyenClient *resty.Client, tagObj map[string]any) (any, error) {
+func GetOrCreateTag(myTruyenClient *resty.Client, tagObj map[string]any, workerID int) (any, error) {
 	if tagObj == nil {
+		log.Printf("[Worker %d] Tag object is nil.", workerID)
 		return nil, nil
 	}
 	name, _ := tagObj["name"].(string)
 	if name == "" {
+		log.Printf("[Worker %d] Tag name is empty.", workerID)
 		return nil, nil
 	}
 	tagSlug := slug.Make(name)
@@ -141,10 +145,10 @@ func GetOrCreateTag(myTruyenClient *resty.Client, tagObj map[string]any) (any, e
 			Post("tags")
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to create tag: %w", err)
+			return nil, fmt.Errorf("[Worker %d] failed to create tag: %w", workerID, err)
 		}
 		if resp.IsError() {
-			return nil, fmt.Errorf("failed to create tag, status: %s, body: %s", resp.Status(), resp.String())
+			return nil, fmt.Errorf("[Worker %d] failed to create tag, status: %s, body: %s", workerID, resp.Status(), resp.String())
 		}
 		getResult.Data = postResult.Data
 	}

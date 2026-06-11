@@ -7,7 +7,7 @@ import (
 	resty "github.com/go-resty/resty/v2"
 )
 
-func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, queueName string) bool {
+func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, queueName string, workerID int) bool {
 
 	var result struct {
 		Pagination struct {
@@ -26,17 +26,17 @@ func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client
 		Get("books")
 
 	if err != nil {
-		log.Printf("Error fetching all books for pagination: %v", err)
+		log.Printf("[Worker %d] Error fetching all books for pagination: %v", workerID, err)
 		return false
 	}
 	if resp.IsError() {
-		log.Printf("Error response from MeTruyen when fetching pagination: %s", resp.Status())
+		log.Printf("[Worker %d] Error response from MeTruyen when fetching pagination: %s", workerID, resp.Status())
 		return false
 	}
 
 	lastPage := result.Pagination.Last
 
-	log.Printf("Pagination info: lastPage=%d", lastPage)
+	log.Printf("[Worker %d] Pagination info: lastPage=%d", workerID, lastPage)
 
 	payloads := make([]map[string]any, 0)
 
@@ -58,11 +58,11 @@ func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client
 			Get("books")
 		
 		if err != nil {
-			log.Printf("Error fetching books for page %d: %v", i, err)
+			log.Printf("[Worker %d] Error fetching books for page %d: %v", workerID, i, err)
 			return false
 		}
 		if resp.IsError() {
-			log.Printf("Error response from MeTruyen when fetching books for page %d: %s", i, resp.Status())
+			log.Printf("[Worker %d] Error response from MeTruyen when fetching books for page %d: %s", workerID, i, resp.Status())
 			return false
 		}
 		for _, book := range res.Data {
@@ -78,11 +78,11 @@ func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client
 			SetBody(payload).
 			Post("rabbitmq/book")
 		if err != nil {
-			log.Printf("Error enqueueing book: %v", err)
+			log.Printf("[Worker %d] Error enqueueing book: %v", workerID, err)
 			return false
 		}
 		if mytruyen_resp.IsError() {
-			log.Printf("Error response from MyTruyen when enqueueing book: %s", mytruyen_resp.Body())
+			log.Printf("[Worker %d] Error response from MyTruyen when enqueueing book: %s", workerID, mytruyen_resp.Body())
 			return false
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/gosimple/slug"
 )
 
-func GenresHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client) (bool) {
+func GenresHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, workerID int) (bool) {
 	var result struct {
 		Data struct {
 			Filter struct {
@@ -23,11 +23,11 @@ func GenresHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client)
 		Get("books/options?v=1")
 
 	if err != nil {
-		log.Printf("Error fetching genres from MeTruyen: %v", err)
+		log.Printf("[Worker %d] Error fetching genres from MeTruyen: %v", workerID, err)
 		return false
 	}
 	if resp.IsError() {
-		log.Printf("Error response from MeTruyen when fetching genres: %s", resp.Status())
+		log.Printf("[Worker %d] Error response from MeTruyen when fetching genres: %s", workerID, resp.Status())
 		return false
 	}
 
@@ -42,11 +42,11 @@ func GenresHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client)
 				Post("/genres")
 			
 			if err != nil {
-				log.Printf("Error creating genre in MyTruyen: %v", err)
+				log.Printf("[Worker %d] Error creating genre in MyTruyen: %v", workerID, err)
 				return false
 			}
 			if resp.StatusCode() >= 500 {
-				log.Printf("Error response from MyTruyen when creating genre: %s", resp.Status())
+				log.Printf("[Worker %d] Error response from MyTruyen when creating genre: %s", workerID, resp.Status())
 				return false
 			}
 		}

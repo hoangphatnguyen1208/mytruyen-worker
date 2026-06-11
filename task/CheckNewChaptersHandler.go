@@ -86,7 +86,7 @@ func CheckNewChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *res
 			SetBody(map[string]int{
 				"book_id": bookIDInt,
 			}).
-			Post("rabbitmq/chapters")
+			Post("rabbitmq/book")
 
 		if err != nil {
 			log.Printf("Error posting chapters task for book %d: %v", bookIDInt, err)

@@ -80,8 +80,10 @@ func CheckNewChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *res
 		}
 
 		if (meTruyenResponse.Data["chapter_count"] == mytruyenResponse.Data["chapter_count"]) {
+			log.Printf("Book ID %d has same chapter count. Skipping.", bookIDInt)
 			continue
 		}
+
 		// Post chapters task to queue
 		mytruyen_resp, err := myTruyenClient.R().
 			SetBody(map[string]int{

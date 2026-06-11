@@ -15,7 +15,7 @@ import (
 	resty "github.com/go-resty/resty/v2"
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
-	// cron "github.com/robfig/cron/v3"
+	cron "github.com/robfig/cron/v3"
 
 	"mytruyen-worker/task"
 )
@@ -86,7 +86,7 @@ func getMyTruyenAuthToken(client *resty.Client) (string, error) {
 func consumer(ctx context.Context) error {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Printf("Error loading .env file")
 	}
 
 	conn, err := amqp.Dial(os.Getenv("RABBITMQ_URL"))
@@ -157,21 +157,21 @@ func consumer(ctx context.Context) error {
 	fmt.Printf("MyTruyen auth token: %s\n", MyTruyenToken)
 	MyTruyenClient.SetAuthToken(MyTruyenToken)
 
-	// c := cron.New()
-	// _, err = c.AddFunc("*/1 * * * *", func() {
-	// 	log.Println("Running scheduled task: CheckNewChaptersHandler")
-	// 	success := task.CheckNewChaptersHandler(MeTruyencvClient, MyTruyenClient)
-	// 	if success {
-	// 		log.Println("Scheduled task CheckNewChaptersHandler completed successfully.")
-	// 	} else {
-	// 		log.Println("Scheduled task CheckNewChaptersHandler failed.")
-	// 	}
-	// })
-	// if err != nil {
-	// 	log.Fatalf("Failed to schedule CheckNewChaptersHandler: %v", err)
-	// }
-	// c.Start()
-	// defer c.Stop()
+	c := cron.New()
+	_, err = c.AddFunc("*/1 * * * *", func() {
+		log.Println("Running scheduled task: CheckNewChaptersHandler")
+		success := task.CheckNewChaptersHandler(MeTruyencvClient, MyTruyenClient)
+		if success {
+			log.Println("Scheduled task CheckNewChaptersHandler completed successfully.")
+		} else {
+			log.Println("Scheduled task CheckNewChaptersHandler failed.")
+		}
+	})
+	if err != nil {
+		log.Fatalf("Failed to schedule CheckNewChaptersHandler: %v", err)
+	}
+	c.Start()
+	defer c.Stop()
 
 	closeChan := make(chan *amqp.Error, 1)
 	conn.NotifyClose(closeChan)

@@ -79,7 +79,7 @@ func ChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Clien
 		if err != nil {
 			log.Printf("Error posting chapter %d for book %d: %v", indexVal, bookID, err)
 			return false
-		} else if resp.IsError() {
+		} else if resp.StatusCode() >= 500 {
 			log.Printf("Failed to post chapter %d for book %d, status: %s, body: %s", indexVal, bookID, resp.Status(), resp.String())
 			return false
 		}

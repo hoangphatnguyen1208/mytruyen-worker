@@ -82,95 +82,93 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 		if err != nil {
 			log.Printf("[Worker %d] Failed to update book %d: %v", workerID, bookID, err)
 		}
-		return true
-	}
+	} else {
+		// Handle author
+		var authorObj map[string]any
+		if a, ok := bookData.Data["author"].(map[string]any); ok && a["name"] != "" {
+			authorObj = a
+		} else if c, ok := bookData.Data["creator"].(map[string]any); ok {
+			authorObj = c
+		}
 
-	// Handle author
-	var authorObj map[string]any
-	if a, ok := bookData.Data["author"].(map[string]any); ok && a["name"] != "" {
-		authorObj = a
-	} else if c, ok := bookData.Data["creator"].(map[string]any); ok {
-		authorObj = c
-	}
+		author, err := GetOrCreateAuthor(myTruyenClient, authorObj, workerID)
+		if err != nil {
+			log.Printf("[Worker %d] Failed to get/create author for book %d: %v", workerID, bookID, err)
+			return false
+		}
+		var authorID any
+		if author != nil {
+			authorID = author["id"]
+		}
 
-	author, err := GetOrCreateAuthor(myTruyenClient, authorObj, workerID)
-	if err != nil {
-		log.Printf("[Worker %d] Failed to get/create author for book %d: %v", workerID, bookID, err)
-		return false
-	}
-	var authorID any
-	if author != nil {
-		authorID = author["id"]
-	}
-
-	// Handle genres
-	genreIDs := []any{}
-	if genresList, ok := bookData.Data["genres"].([]any); ok {
-		for _, genreItem := range genresList {
-			if gMap, ok := genreItem.(map[string]any); ok {
-				gid, err := GetOrCreateGenre(myTruyenClient, gMap, workerID)
-				if err == nil && gid != nil {
-					genreIDs = append(genreIDs, gid)
+		// Handle genres
+		genreIDs := []any{}
+		if genresList, ok := bookData.Data["genres"].([]any); ok {
+			for _, genreItem := range genresList {
+				if gMap, ok := genreItem.(map[string]any); ok {
+					gid, err := GetOrCreateGenre(myTruyenClient, gMap, workerID)
+					if err == nil && gid != nil {
+						genreIDs = append(genreIDs, gid)
+					}
 				}
 			}
 		}
-	}
 
-	// Handle tags
-	tagIDs := []any{}
-	if tagsList, ok := bookData.Data["tags"].([]any); ok {
-		for _, tagItem := range tagsList {
-			if tMap, ok := tagItem.(map[string]any); ok {
-				tid, err := GetOrCreateTag(myTruyenClient, tMap, workerID)
-				if err == nil && tid != nil {
-					tagIDs = append(tagIDs, tid)
+		// Handle tags
+		tagIDs := []any{}
+		if tagsList, ok := bookData.Data["tags"].([]any); ok {
+			for _, tagItem := range tagsList {
+				if tMap, ok := tagItem.(map[string]any); ok {
+					tid, err := GetOrCreateTag(myTruyenClient, tMap, workerID)
+					if err == nil && tid != nil {
+						tagIDs = append(tagIDs, tid)
+					}
 				}
 			}
 		}
-	}
 
-	// Prepare payload for MyTruyen
-	payload := map[string]any{
-		"id":               bookID,
-		"name":             getVal(bookData.Data, "name", ""),
-		"slug":             getVal(bookData.Data, "slug", ""),
-		"kind":             getVal(bookData.Data, "kind", 1),
-		"sex":              getVal(bookData.Data, "sex", 1),
-		"status_id":        getVal(bookData.Data, "status", 1),
-		"chapter_per_week": getVal(bookData.Data, "chapter_per_week", 1),
-		"published":        getVal(bookData.Data, "published", true),
-		"synopsis":         getVal(bookData.Data, "synopsis", ""),
-		"note":             getVal(bookData.Data, "note", []any{}),
-		"author_id":        authorID,
-		"genre_ids":        genreIDs,
-		"tag_ids":          tagIDs,
-		"poster":           getVal(bookData.Data, "poster", ""),
-		"chapter_count":    getVal(bookData.Data, "chapter_count", 0),
-		"word_count":       getVal(bookData.Data, "word_count", 0),
-	}
+		// Prepare payload for MyTruyen
+		payload := map[string]any{
+			"id":               bookID,
+			"name":             getVal(bookData.Data, "name", ""),
+			"slug":             getVal(bookData.Data, "slug", ""),
+			"kind":             getVal(bookData.Data, "kind", 1),
+			"sex":              getVal(bookData.Data, "sex", 1),
+			"status_id":        getVal(bookData.Data, "status", 1),
+			"chapter_per_week": getVal(bookData.Data, "chapter_per_week", 1),
+			"published":        getVal(bookData.Data, "published", true),
+			"synopsis":         getVal(bookData.Data, "synopsis", ""),
+			"note":             getVal(bookData.Data, "note", []any{}),
+			"author_id":        authorID,
+			"genre_ids":        genreIDs,
+			"tag_ids":          tagIDs,
+			"poster":           getVal(bookData.Data, "poster", ""),
+			"chapter_count":    getVal(bookData.Data, "chapter_count", 0),
+			"word_count":       getVal(bookData.Data, "word_count", 0),
+		}
 
-	mytruyen_resp, err := myTruyenClient.R().
-		SetBody(payload).
-		Post("books")
-	if err != nil {
-		log.Printf("[Worker %d] Failed to create book %d: %v", workerID, bookID, err)
-		return false
-	} else if mytruyen_resp.IsError() {
-		data := map[string]any{}
-		if err := json.Unmarshal(mytruyen_resp.Body(), &data); err == nil {
-			if msg := data["message"]; msg != nil {
-				if strings.Contains(msg.(string), "already exists") {
-					log.Printf("[Worker %d] Book %d already exists in MyTruyen. Skipping...", workerID, bookID)
-					return true
+		mytruyen_resp, err := myTruyenClient.R().
+			SetBody(payload).
+			Post("books")
+		if err != nil {
+			log.Printf("[Worker %d] Failed to create book %d: %v", workerID, bookID, err)
+			return false
+		} else if mytruyen_resp.IsError() {
+			data := map[string]any{}
+			if err := json.Unmarshal(mytruyen_resp.Body(), &data); err == nil {
+				if msg := data["message"]; msg != nil {
+					if strings.Contains(msg.(string), "already exists") {
+						log.Printf("[Worker %d] Book %d already exists in MyTruyen. Skipping...", workerID, bookID)
+						return true
+					}
 				}
 			}
+			log.Printf("[Worker %d] Failed to create book %d, status: %s, body: %s", workerID, bookID, mytruyen_resp.Status(), mytruyen_resp.String())
+			return false
 		}
-		log.Printf("[Worker %d] Failed to create book %d, status: %s, body: %s", workerID, bookID, mytruyen_resp.Status(), mytruyen_resp.String())
-		return false
 	}
-
 	// Post chapters task to queue
-	mytruyen_resp, err = myTruyenClient.R().
+	mytruyen_resp, err := myTruyenClient.R().
 		SetBody(map[string]int{
 			"book_id": bookID,
 		}).

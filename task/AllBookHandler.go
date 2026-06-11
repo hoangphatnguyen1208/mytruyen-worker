@@ -38,6 +38,8 @@ func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client
 
 	log.Printf("Pagination info: lastPage=%d", lastPage)
 
+	payloads := make([]map[string]any, 0)
+
 	for i := 1; i <= lastPage; i++ {
 		var res struct {
 			Data []struct {
@@ -64,21 +66,24 @@ func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client
 			return false
 		}
 		for _, book := range res.Data {
-			payload := map[string]int{
+			payload := map[string]any{
 				"book_id": book.ID,
 			}
-			
-			mytruyen_resp, err := myTruyenClient.R().
-				SetBody(payload).
-				Post("rabbitmq/book")
-			if err != nil {
-				log.Printf("Error enqueueing book %d: %v", book.ID, err)
-				return false
-			}
-			if mytruyen_resp.IsError() {
-				log.Printf("Error response from MyTruyen when enqueueing book %d: %s", book.ID, mytruyen_resp.Body())
-				return false
-			}
+			payloads = append(payloads, payload)
+		}
+	}
+    
+	for _, payload := range payloads {
+		mytruyen_resp, err := myTruyenClient.R().
+			SetBody(payload).
+			Post("rabbitmq/book")
+		if err != nil {
+			log.Printf("Error enqueueing book: %v", err)
+			return false
+		}
+		if mytruyen_resp.IsError() {
+			log.Printf("Error response from MyTruyen when enqueueing book: %s", mytruyen_resp.Body())
+			return false
 		}
 	}
 	return true

@@ -59,12 +59,11 @@ func CheckNewChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *res
 			Get(fmt.Sprintf("books/%d", bookIDInt))
 		if err != nil {
 			log.Printf("Error fetching book details for book ID %d: %v", bookIDInt, err)
-			continue
 		}
 		if metruyencvResp.IsError() {
 			log.Printf("Error response from MeTruyen when fetching book details for book ID %d: %s", bookIDInt, metruyencvResp.Status())
-			continue
 		}
+		
 		
 		var mytruyenResponse response
 		mytruyenResp, err := myTruyenClient.R().
@@ -72,14 +71,12 @@ func CheckNewChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *res
 			Get(fmt.Sprintf("books/id/%d", bookIDInt))
 		if err != nil {
 			log.Printf("Error checking book in MyTruyen for book ID %d: %v", bookIDInt, err)
-			continue
 		}
 		if mytruyenResp.StatusCode() == 404 {
 			log.Printf("Book ID %d not found in MyTruyen. Skipping chapters check.", bookIDInt)
-			continue
 		}
 
-		if (meTruyenResponse.Data["chapter_count"] == mytruyenResponse.Data["chapter_count"]) {
+		if (mytruyenResponse.Data["chapter_count"] != nil && meTruyenResponse.Data["chapter_count"] == mytruyenResponse.Data["chapter_count"]) {
 			log.Printf("Book ID %d has same chapter count. Skipping.", bookIDInt)
 			continue
 		}

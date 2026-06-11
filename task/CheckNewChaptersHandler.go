@@ -73,11 +73,11 @@ func CheckNewChaptersHandler(meTruyencvClient *resty.Client, myTruyenClient *res
 			log.Printf("Error checking book in MyTruyen for book ID %d: %v", bookIDInt, err)
 		}
 		if mytruyenResp.StatusCode() == 404 {
-			log.Printf("Book ID %d not found in MyTruyen. Skipping chapters check.", bookIDInt)
+			log.Printf("Book ID %d not found in MyTruyen.", bookIDInt)
 		}
 
-		if (mytruyenResponse.Data["chapter_count"] != nil && meTruyenResponse.Data["chapter_count"] == mytruyenResponse.Data["chapter_count"]) {
-			log.Printf("Book ID %d has same chapter count. Skipping.", bookIDInt)
+		if mytruyenResponse.Data["chapter_count"] != nil && meTruyenResponse.Data["chapter_count"] == mytruyenResponse.Data["chapter_count"] {
+			log.Printf("Book ID %d has same chapter count.", bookIDInt)
 			continue
 		}
 

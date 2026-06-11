@@ -2,6 +2,8 @@ package task
 
 import (
 	"fmt"
+	"log"
+	"net/url"
 
 	resty "github.com/go-resty/resty/v2"
 	"github.com/gosimple/slug"
@@ -9,10 +11,12 @@ import (
 
 func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (map[string]any, error) {
 	if authorObj == nil {
+		log.Printf("Author object is nil.")
 		return nil, nil
 	}
 	name, _ := authorObj["name"].(string)
 	if name == "" {
+		log.Printf("Author name is empty.")
 		return nil, nil
 	}
 
@@ -21,9 +25,11 @@ func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (
 	var getResult struct {
 		Data map[string]any `json:"data"`
 	}
+
+	encodedName := url.PathEscape(name)
 	resp, err := myTruyenClient.R().
 		SetResult(&getResult).
-		Get(fmt.Sprintf("authors/%s", name))
+		Get(fmt.Sprintf("authors/%s", encodedName))
 
 	if err != nil || resp.IsError() {
 		// Not found or error, create the author

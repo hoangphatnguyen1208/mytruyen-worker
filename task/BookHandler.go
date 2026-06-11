@@ -85,7 +85,7 @@ func BookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, b
 
 	// Handle author
 	var authorObj map[string]any
-	if a, ok := bookData.Data["author"].(map[string]any); ok {
+	if a, ok := bookData.Data["author"].(map[string]any); ok && a["name"] != "" {
 		authorObj = a
 	} else if c, ok := bookData.Data["creator"].(map[string]any); ok {
 		authorObj = c

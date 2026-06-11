@@ -1,14 +1,13 @@
 package task
 
 import (
-	"encoding/json"
+	"fmt"
 	"log"
 
 	resty "github.com/go-resty/resty/v2"
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func AllBookHandler(meTruyencvClient *resty.Client, ch *amqp.Channel, queueName string) bool {
+func AllBookHandler(meTruyencvClient *resty.Client, myTruyenClient *resty.Client, queueName string) bool {
 
 	var result struct {
 		Pagination struct {
@@ -40,32 +39,47 @@ func AllBookHandler(meTruyencvClient *resty.Client, ch *amqp.Channel, queueName 
 	log.Printf("Pagination info: lastPage=%d", lastPage)
 
 	for i := 1; i <= lastPage; i++ {
-		payload := map[string]any{
-			"type":  "crawl_book",
-			"page":  i,
-			"limit": 20,
-		}
-		body, err := json.Marshal(payload)
-		if err != nil {
-			log.Printf("Error marshalling crawl_book payload: %v", err)
-			continue
+		var res struct {
+			Data []struct {
+				ID int `json:"id"`
+			} `json:"data"`
 		}
 
-		err = ch.Publish(
-			"",        // exchange
-			queueName, // routing key
-			false,     // mandatory
-			false,     // immediate
-			amqp.Publishing{
-				ContentType: "application/json",
-				Body:        body,
-			},
-		)
+		resp, err := meTruyencvClient.R().
+			SetQueryParams(map[string]string{
+				"limit": "20",
+				"page":  fmt.Sprintf("%d", i),
+				"sort":  "-created_at",
+				"state": "published",
+			}).
+			SetResult(&res).
+			Get("books")
+		
 		if err != nil {
-			log.Printf("Failed to publish crawl_book task for page %d: %v", i, err)
+			log.Printf("Error fetching books for page %d: %v", i, err)
 			return false
 		}
+		if resp.IsError() {
+			log.Printf("Error response from MeTruyen when fetching books for page %d: %s", i, resp.Status())
+			return false
+		}
+		for _, book := range res.Data {
+			payload := map[string]int{
+				"book_id": book.ID,
+			}
+			
+			mytruyen_resp, err := myTruyenClient.R().
+				SetBody(payload).
+				Post("rabbitmq/book")
+			if err != nil {
+				log.Printf("Error enqueueing book %d: %v", book.ID, err)
+				return false
+			}
+			if mytruyen_resp.IsError() {
+				log.Printf("Error response from MyTruyen when enqueueing book %d: %s", book.ID, mytruyen_resp.Body())
+				return false
+			}
+		}
 	}
-
 	return true
 }

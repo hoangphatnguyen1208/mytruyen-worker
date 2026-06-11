@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"strings"
+	"os/signal"
+	"strconv"
+	"sync"
+	"syscall"
+	"time"
 
 	resty "github.com/go-resty/resty/v2"
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
+	// cron "github.com/robfig/cron/v3"
 
 	"mytruyen-worker/task"
 )
@@ -77,7 +83,7 @@ func getMyTruyenAuthToken(client *resty.Client) (string, error) {
 	return result.Data.Token, nil
 }
 
-func main() {
+func consumer(ctx context.Context) error {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -108,14 +114,24 @@ func main() {
 		log.Fatal("Failed to declare queue:", err)
 	}
 
+	couroutineCount, err := strconv.Atoi(os.Getenv("CRAWL_COURUTINE_COUNT"))
+	if err != nil {
+		log.Fatal("Failed to parse CRAWL_COURUTINE_COUNT:", err)
+	}
+	log.Printf("Crawl couroutine count: %d", couroutineCount)
+	err = ch.Qos(couroutineCount, 0, false)
+	if err != nil {
+		log.Fatal("Failed to set QoS:", err)
+	}
+
 	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer
-		false,  // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
+		q.Name,            // queue
+		"mytruyen-worker", // consumer
+		false,             // auto-ack
+		false,             // exclusive
+		false,             // no-local
+		false,             // no-wait
+		nil,               // args
 	)
 	if err != nil {
 		log.Fatal("Failed to register a consumer:", err)
@@ -131,136 +147,202 @@ func main() {
 	fmt.Printf("MeTruyencv auth token: %s\n", MeTruyencvToken)
 	MeTruyencvClient.SetAuthToken(MeTruyencvToken)
 
-	MyTruyencvClient := resty.New()
-	MyTruyencvClient.SetBaseURL(os.Getenv("MYTRUYEN_BACKEND"))
-	addLog(MyTruyencvClient)
-	MyTruyencvToken, err := getMyTruyenAuthToken(MyTruyencvClient)
+	MyTruyenClient := resty.New()
+	MyTruyenClient.SetBaseURL(os.Getenv("MYTRUYEN_BACKEND"))
+	addLog(MyTruyenClient)
+	MyTruyenToken, err := getMyTruyenAuthToken(MyTruyenClient)
 	if err != nil {
 		log.Fatalf("Failed to get MyTruyen auth token: %v", err)
 	}
-	fmt.Printf("MyTruyen auth token: %s\n", MyTruyencvToken)
-	MyTruyencvClient.SetAuthToken(MyTruyencvToken)
+	fmt.Printf("MyTruyen auth token: %s\n", MyTruyenToken)
+	MyTruyenClient.SetAuthToken(MyTruyenToken)
 
-	meiliURL := os.Getenv("MEILI_URL")
-	if !strings.HasPrefix(meiliURL, "http://") && !strings.HasPrefix(meiliURL, "https://") {
-		meiliURL = "http://" + meiliURL
-	}
-	if !strings.Contains(meiliURL, ":") {
-		meiliURL = meiliURL + ":7700"
-	}
-	MeiliClient := resty.New()
-	MeiliClient.SetBaseURL(meiliURL)
-	MeiliClient.SetHeader("Authorization", "Bearer "+os.Getenv("MEILI_MASTER_KEY"))
+	// c := cron.New()
+	// _, err = c.AddFunc("*/1 * * * *", func() {
+	// 	log.Println("Running scheduled task: CheckNewChaptersHandler")
+	// 	success := task.CheckNewChaptersHandler(MeTruyencvClient, MyTruyenClient)
+	// 	if success {
+	// 		log.Println("Scheduled task CheckNewChaptersHandler completed successfully.")
+	// 	} else {
+	// 		log.Println("Scheduled task CheckNewChaptersHandler failed.")
+	// 	}
+	// })
+	// if err != nil {
+	// 	log.Fatalf("Failed to schedule CheckNewChaptersHandler: %v", err)
+	// }
+	// c.Start()
+	// defer c.Stop()
 
-	forever := make(chan bool)
+	closeChan := make(chan *amqp.Error, 1)
+	conn.NotifyClose(closeChan)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < couroutineCount; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for d := range msgs {
+				var crawlRequest struct {
+					Type   string `json:"type"`
+					BookID int    `json:"book_id"`
+				}
+				err := json.Unmarshal(d.Body, &crawlRequest)
+				if err != nil {
+					log.Printf("Error parsing message: %v", err)
+					_ = d.Nack(false, false)
+					continue
+				}
+
+				log.Printf("[Worker %d] Received a crawl request: Type=%s, BookID=%d",
+					workerID,
+					crawlRequest.Type,
+					crawlRequest.BookID,
+				)
+
+				var success bool
+				switch crawlRequest.Type {
+				case "crawl_genres":
+					success = task.GenresHandler(MeTruyencvClient, MyTruyenClient)
+					if !success {
+						log.Printf("[Worker %d] Failed to crawl genres", workerID)
+					} else {
+						log.Printf("[Worker %d] Successfully crawled genres", workerID)
+					}
+
+				case "crawl_tags":
+					success = task.TagsHandler(MeTruyencvClient, MyTruyenClient)
+					if !success {
+						log.Printf("[Worker %d] Failed to crawl tags", workerID)
+					} else {
+						log.Printf("[Worker %d] Successfully crawled tags", workerID)
+					}
+
+				case "crawl_book_statuses":
+					success = task.BookStatusHandler(MeTruyencvClient, MyTruyenClient)
+					if !success {
+						log.Printf("[Worker %d] Failed to crawl book statuses", workerID)
+					} else {
+						log.Printf("[Worker %d] Successfully crawled book statuses", workerID)
+					}
+
+				case "crawl_all_books":
+					success = task.AllBookHandler(MeTruyencvClient, MyTruyenClient, q.Name)
+					if !success {
+						log.Printf("[Worker %d] Failed to crawl all books", workerID)
+					} else {
+						log.Printf("[Worker %d] Successfully enqueued all books crawling", workerID)
+					}
+
+				case "crawl_book":
+					success = task.BookHandler(MeTruyencvClient, MyTruyenClient, crawlRequest.BookID)
+					if !success {
+						log.Printf("[Worker %d] Failed to crawl book ID %d", workerID, crawlRequest.BookID)
+					} else {
+						log.Printf("[Worker %d] Successfully crawled book ID %d", workerID, crawlRequest.BookID)
+					}
+
+				case "crawl_chapters":
+					success = task.ChaptersHandler(MeTruyencvClient, MyTruyenClient, crawlRequest.BookID)
+					if !success {
+						log.Printf("[Worker %d] Failed to crawl chapters", workerID)
+					} else {
+						log.Printf("[Worker %d] Successfully crawled chapters", workerID)
+					}
+
+				// case "check_new_chapters":
+				// 	success = task.CheckNewChaptersHandler(MeTruyencvClient, MyTruyenClient, ch, q.Name)
+				// 	if !success {
+				// 		log.Printf("[Worker %d] Failed to check new chapters", workerID)
+				// 	} else {
+				// 		log.Printf("[Worker %d] Successfully checked new chapters", workerID)
+				// 	}
+
+				// case "refresh_mytruyen_token":
+				// 	token, err := getMyTruyenAuthToken(MyTruyenClient)
+				// 	if err != nil {
+				// 		log.Printf("[Worker %d] Failed to refresh MyTruyen auth token: %v", workerID, err)
+				// 		success = false
+				// 	} else {
+				// 		log.Printf("[Worker %d] Successfully refreshed MyTruyen auth token.", workerID)
+				// 		MyTruyenClient.SetAuthToken(token)
+				// 		success = true
+				// 	}
+
+				// case "add_all_books_to_meili":
+				// 	success = task.MeiliHandler(MyTruyencvClient, MeiliClient)
+				// 	if !success {
+				// 		log.Printf("[Worker %d] Failed to add all books to Meilisearch", workerID)
+				// 	} else {
+				// 		log.Printf("[Worker %d] Successfully added all books to Meilisearch", workerID)
+				// 	}
+
+				default:
+					log.Printf("[Worker %d] Unknown crawl request type: %s", workerID, crawlRequest.Type)
+					success = false
+				}
+
+				if success {
+					if err := d.Ack(false); err != nil {
+						log.Printf("[Worker %d] Ack failed: %v", workerID, err)
+					}
+				} else {
+					if err := d.Nack(false, true); err != nil {
+						log.Printf("[Worker %d] Nack failed: %v", workerID, err)
+					}
+				}
+			}
+		}(i)
+	}
+	select {
+	case errClose := <-closeChan:
+		log.Printf("RabbitMQ closed: %v", errClose)
+		wg.Wait()
+		return fmt.Errorf("rabbitmq disconnected")
+
+	case <-ctx.Done():
+		log.Println("Shutdown requested")
+
+		ch.Cancel("mytruyen-worker", false)
+
+		wg.Wait()
+
+		ch.Close()
+
+		return nil
+	}
+}
+
+func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		for d := range msgs {
-			var crawlRequest struct {
-				Type   string `json:"type"`
-				BookID string `json:"book_id"`
-				Page   int    `json:"page"`
-				Limit  int    `json:"limit"`
-			}
-			err := json.Unmarshal(d.Body, &crawlRequest)
-			if err != nil {
-				log.Printf("Error parsing message: %v", err)
-				continue
-			}
+		sig := <-sigChan
+		log.Printf("Received signal: %v", sig)
 
-			log.Printf("Received a crawl request: Type=%s, BookID=%s, Page=%d, Limit=%d",
-				crawlRequest.Type, crawlRequest.BookID, crawlRequest.Page, crawlRequest.Limit)
-
-			var success bool
-			switch crawlRequest.Type {
-			case "crawl_genres":
-				success = task.GenresHandler(MeTruyencvClient, MyTruyencvClient)
-				if !success {
-					log.Println("Failed to crawl genres")
-				} else {
-					log.Println("Successfully crawled genres")
-				}
-
-			case "crawl_tags":
-				success = task.TagsHandler(MeTruyencvClient, MyTruyencvClient)
-				if !success {
-					log.Println("Failed to crawl tags")
-				} else {
-					log.Println("Successfully crawled tags")
-				}
-
-			case "crawl_book_statuses":
-				success = task.BookStatusHandler(MeTruyencvClient, MyTruyencvClient)
-				if !success {
-					log.Println("Failed to crawl book statuses")
-				} else {
-					log.Println("Successfully crawled book statuses")
-				}
-
-			case "crawl_all_books":
-				success = task.AllBookHandler(MeTruyencvClient, ch, q.Name)
-				if !success {
-					log.Println("Failed to crawl all books")
-				} else {
-					log.Println("Successfully enqueued all books crawling")
-				}
-
-			case "crawl_book":
-				success = task.BookHandler(MeTruyencvClient, MyTruyencvClient, ch, q.Name, crawlRequest.Page, crawlRequest.Limit)
-				if !success {
-					log.Println("Failed to crawl books page")
-				} else {
-					log.Printf("Successfully crawled books page %d", crawlRequest.Page)
-				}
-
-			case "crawl_chapters":
-				success = task.ChaptersHandler(MeTruyencvClient, MyTruyencvClient, crawlRequest.BookID)
-				if !success {
-					log.Println("Failed to crawl chapters")
-				} else {
-					log.Println("Successfully crawled chapters")
-				}
-
-			case "check_new_chapters":
-				success = task.CheckNewChaptersHandler(MeTruyencvClient, MyTruyencvClient, ch, q.Name)
-				if !success {
-					log.Println("Failed to check new chapters")
-				} else {
-					log.Println("Successfully checked new chapters")
-				}
-
-			case "refresh_mytruyen_token":
-				token, err := getMyTruyenAuthToken(MyTruyencvClient)
-				if err != nil {
-					log.Printf("Failed to refresh MyTruyen auth token: %v", err)
-					success = false
-				} else {
-					log.Println("Successfully refreshed MyTruyen auth token.")
-					MyTruyencvClient.SetAuthToken(token)
-					success = true
-				}
-
-			case "add_all_books_to_meili":
-				success = task.MeiliHandler(MyTruyencvClient, MeiliClient)
-				if !success {
-					log.Println("Failed to add all books to Meilisearch")
-				} else {
-					log.Println("Successfully added all books to Meilisearch")
-				}
-
-			default:
-				log.Printf("Unknown crawl request type: %s", crawlRequest.Type)
-				success = false
-			}
-
-			if success {
-				d.Ack(false)
-			} else {
-				// Reject and requeue the message on failure
-				d.Nack(false, true)
-			}
-		}
+		cancel()
 	}()
 
-	<-forever
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Exiting...")
+			return
+		default:
+		}
+
+		err := consumer(ctx)
+
+		if ctx.Err() != nil {
+			log.Println("Shutdown complete")
+			return
+		}
+
+		log.Printf("Consumer stopped: %v", err)
+
+		time.Sleep(5 * time.Second)
+	}
 }

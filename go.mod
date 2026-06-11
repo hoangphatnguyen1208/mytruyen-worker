@@ -1,6 +1,6 @@
 module mytruyen-worker
 
-go 1.26.3
+go 1.26
 
 require (
 	github.com/FabianWe/goslugify v1.0.0 // indirect
@@ -9,6 +9,7 @@ require (
 	github.com/gosimple/unidecode v1.0.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/rabbitmq/amqp091-go v1.11.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 )

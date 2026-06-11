@@ -2,16 +2,9 @@ package task
 
 import (
 	"fmt"
-	"sync"
 
 	resty "github.com/go-resty/resty/v2"
 	"github.com/gosimple/slug"
-)
-
-var (
-	authorCache sync.Map // key: string (name), value: map[string]any
-	genreCache  sync.Map // key: string (slug), value: any (ID)
-	tagCache    sync.Map // key: string (slug), value: any (ID)
 )
 
 func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (map[string]any, error) {
@@ -23,12 +16,6 @@ func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (
 		return nil, nil
 	}
 
-	// Check local cache
-	if val, ok := authorCache.Load(name); ok {
-		if author, ok := val.(map[string]any); ok {
-			return author, nil
-		}
-	}
 
 	// Fetch from MyTruyen
 	var getResult struct {
@@ -62,9 +49,6 @@ func GetOrCreateAuthor(myTruyenClient *resty.Client, authorObj map[string]any) (
 	}
 
 	author := getResult.Data
-	if author != nil {
-		authorCache.Store(name, author)
-	}
 	return author, nil
 }
 
@@ -77,11 +61,6 @@ func GetOrCreateGenre(myTruyenClient *resty.Client, genreObj map[string]any) (an
 		return nil, nil
 	}
 	genreSlug := slug.Make(name)
-
-	// Check local cache
-	if val, ok := genreCache.Load(genreSlug); ok {
-		return val, nil
-	}
 
 	var getResult struct {
 		Data map[string]any `json:"data"`
@@ -115,7 +94,6 @@ func GetOrCreateGenre(myTruyenClient *resty.Client, genreObj map[string]any) (an
 	genreData := getResult.Data
 	if genreData != nil {
 		id := genreData["id"]
-		genreCache.Store(genreSlug, id)
 		return id, nil
 	}
 	return nil, nil
@@ -130,11 +108,6 @@ func GetOrCreateTag(myTruyenClient *resty.Client, tagObj map[string]any) (any, e
 		return nil, nil
 	}
 	tagSlug := slug.Make(name)
-
-	// Check local cache
-	if val, ok := tagCache.Load(tagSlug); ok {
-		return val, nil
-	}
 
 	var getResult struct {
 		Data map[string]any `json:"data"`
@@ -173,7 +146,6 @@ func GetOrCreateTag(myTruyenClient *resty.Client, tagObj map[string]any) (any, e
 	tagData := getResult.Data
 	if tagData != nil {
 		id := tagData["id"]
-		tagCache.Store(tagSlug, id)
 		return id, nil
 	}
 	return nil, nil
